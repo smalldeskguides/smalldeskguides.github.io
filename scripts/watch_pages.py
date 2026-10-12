@@ -89,6 +89,9 @@ def assess(expected, remote, build, runs, now, expired=False, not_before=None):
             deployment = run.get("deployment")
             if deployment:
                 status = deployment["status"]
+                for identifier in (deployment.get("id"), status.get("id")):
+                    if type(identifier) is not int or identifier < 1:
+                        raise ValueError("invalid native deployment/status identity")
                 started = stamp(run.get("run_started_at") or run["created_at"])
                 prefix = f"https://github.com/{REPO}/actions/runs/{run['id']}/job/"
                 bound = (deployment["sha"] == expected and deployment["environment"] == "github-pages"
@@ -100,6 +103,8 @@ def assess(expected, remote, build, runs, now, expired=False, not_before=None):
                 if bound and status["state"] in ("failure", "error"):
                     return {**result, "state": "deployment_failed", "codes": ["PAGES_FAILED"]}
                 job = run.get("deployJob", {})
+                if job and (type(job.get("id")) is not int or job["id"] < 1):
+                    raise ValueError("invalid native deployment job identity")
                 steps = job.get("steps", [])
                 if (bound and status["state"] == "success" and status["environment_url"] == SITE
                         and job.get("head_sha") == expected and job.get("name") == "deploy"
@@ -214,6 +219,7 @@ def watch(expected, files, timeout=600, interval=60, once=False, *, not_before=N
     previous = None
     snapshot = None
     native_observed_at = None
+    last_report = None
     while True:
         expired = clock() >= deadline
         try:
@@ -226,28 +232,29 @@ def watch(expected, files, timeout=600, interval=60, once=False, *, not_before=N
                 snapshot = remote, build, runs
                 native_observed_at = utc().isoformat()
             report = assess(expected, remote, build, runs, utc(), expired, not_before)
+            if expired and last_report and last_report["state"] == "serving_stale":
+                report = {**last_report, "codes": ["SERVED_BYTES_DIFFER", "WATCH_WINDOW_EXCEEDED"]}
             if report["state"] == "awaiting_served_bytes":
                 if expired:
                     raise TimeoutError("fresh ownership recheck unavailable at deadline")
                 checks = readback(files, deadline)
+                good = (bool(files) and len(checks) == len(files) and {c["path"] for c in checks} == set(files)
+                        and all(c["exactBytes"] for c in checks))
                 # Recheck native identities after byte readback; later pushes supersede this watch.
-                if clock() >= deadline:
-                    raise TimeoutError("public readback exhausted ownership recheck deadline")
-                remote, build, runs = native(expected, deadline, not_before)
-                if clock() >= deadline:
-                    raise TimeoutError("ownership recheck exceeded deadline")
-                snapshot = remote, build, runs
-                native_observed_at = utc().isoformat()
-                current = assess(expected, remote, build, runs, utc(), clock() >= deadline, not_before)
-                if current["state"] != "awaiting_served_bytes":
-                    report = current
-                else:
-                    report = current
-                    good = (bool(files) and len(checks) == len(files) and {c["path"] for c in checks} == set(files)
-                            and all(c["exactBytes"] for c in checks))
+                if good:
+                    if clock() >= deadline:
+                        raise TimeoutError("public readback exhausted ownership recheck deadline")
+                    remote, build, runs = native(expected, deadline, not_before)
+                    if clock() >= deadline:
+                        raise TimeoutError("ownership recheck exceeded deadline")
+                    snapshot = remote, build, runs
+                    native_observed_at = utc().isoformat()
+                    report = assess(expected, remote, build, runs, utc(), False, not_before)
+                if report["state"] == "awaiting_served_bytes":
                     report.update(state="verified" if good else "serving_stale",
                                   verified=good, publicFileMatches=sum(c["exactBytes"] for c in checks),
                                   publicFilesChecked=len(checks), checks=checks,
+                                  servedBytesObservedAt=utc().isoformat(),
                                   codes=[] if good else ["SERVED_BYTES_DIFFER"])
         except (OSError, ValueError, KeyError, TypeError) as exc:
             report = {"expectedSha": expected, "state": "observation_error", "verified": False,
@@ -271,6 +278,7 @@ def watch(expected, files, timeout=600, interval=60, once=False, *, not_before=N
             previous = key
         if finished:
             return report
+        last_report = report
         sleep(min(interval, max(0, deadline - clock())))
 
 

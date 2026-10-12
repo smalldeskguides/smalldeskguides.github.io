@@ -73,6 +73,11 @@ propagation; no wait or retry loop continues indefinitely. HTTP reads use socket
 timeouts and absolute-deadline checks between bounded body chunks; late bytes or
 an unavailable final ownership recheck cannot produce success. The twelve-minute
 hosted job limit supplies the separate process-level bound on blocking I/O.
+At the default cadence, an unsuccessful ten-minute serving wait makes at most
+50 GitHub API GETs; success needs one additional fresh ownership/proof readback
+(at most five GETs). Mismatched bytes never cause a second full observation in
+the same interval. API rate-limit or read errors stop as unverified observations,
+without permission escalation or a retry loop.
 
 For a read-only local observation from a clean checkout of the target commit:
 

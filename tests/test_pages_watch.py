@@ -185,6 +185,32 @@ class PagesEvidence(unittest.TestCase):
         self.assertEqual(assess(SHA, SHA, None, [record], later, expired=True, not_before=later)["state"],
                          "missing_deployment_receipt")
 
+    def test_native_deployment_identifiers_are_positive_integers(self):
+        for kind, value in [("deployment", 0), ("deployment", -1), ("status", None),
+                            ("job", 0), ("job", -1), ("job", "456"), ("job", True)]:
+            record = public_success()
+            target = record["deployment"] if kind == "deployment" else record["deployment"]["status"] if kind == "status" else record["deployJob"]
+            target["id"] = value
+            if kind == "job":
+                record["deployment"]["status"]["log_url"] = f"https://github.com/{REPO}/actions/runs/123/job/{value}"
+            with self.subTest(kind=kind, value=value), self.assertRaises(ValueError):
+                assess(SHA, SHA, None, [record], NOW)
+
+    def test_stale_serving_wait_has_one_native_observation_per_interval(self):
+        elapsed = [0]
+        calls = []
+        def native(*_): calls.append(elapsed[0]); return SHA, None, [public_success()]
+        def sleep(seconds): elapsed[0] += seconds
+        report = watch(SHA, {"index.html": "c" * 64}, timeout=600, interval=60,
+            native=native, readback=lambda *_: [{"path": "index.html", "exactBytes": False}],
+            clock=lambda: elapsed[0], sleep=sleep, utc=lambda: NOW + timedelta(seconds=elapsed[0]),
+            emit=lambda _: None)
+        self.assertEqual(calls, list(range(0, 600, 60)))
+        self.assertFalse(report["verified"])
+        self.assertEqual(len(calls), 10)
+        self.assertEqual(report["state"], "serving_stale")
+        self.assertIn("WATCH_WINDOW_EXCEEDED", report["codes"])
+
     def test_deadline_exhausted_readback_cannot_skip_ownership_and_pass(self):
         elapsed = [0]
         calls = []
