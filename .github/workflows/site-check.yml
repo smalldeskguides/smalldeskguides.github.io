@@ -1,0 +1,21 @@
+name: Site checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  site-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check site links, metadata and font notices
+        run: python3 -B scripts/check_site.py
+      - name: Exercise broken-site regressions
+        run: python3 -B -m unittest discover -s tests -v

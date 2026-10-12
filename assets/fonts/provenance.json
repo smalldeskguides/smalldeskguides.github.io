@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "meaning": "Byte-identical distribution reference, not a claim about the original download/version.",
+  "fonts": [
+    {
+      "family": "Fraunces",
+      "file": "fraunces-latin-wght-normal.woff2",
+      "sha256": "7f9d191d999336d3b9790afa72e1358e50a13b06d4f289341e92a311967a80f9",
+      "license": "OFL-1.1",
+      "matchingDistribution": {
+        "package": "@fontsource-variable/fraunces",
+        "version": "5.3.0",
+        "member": "package/files/fraunces-latin-wght-normal.woff2",
+        "archiveUrl": "https://registry.npmjs.org/@fontsource-variable/fraunces/-/fraunces-5.3.0.tgz",
+        "archiveSha256": "c8bff30211fb6683f7c4c6fa0c298d1f1c7d4e811767de92d26a199c273235fb",
+        "npmIntegrityVerifiedDuringResearch": true
+      },
+      "originalAcquisitionVersion": "unknown",
+      "notices": [
+        {
+          "file": "licenses/Fraunces-Fontsource-LICENSE.txt",
+          "sha256": "cd3384cafac6f2bddc3955273958a2e029f97027c8037ac539ef5744a77b579e",
+          "sourceUrl": "https://registry.npmjs.org/@fontsource-variable/fraunces/-/fraunces-5.3.0.tgz"
+        },
+        {
+          "file": "licenses/Fraunces-Google-Fonts-OFL.txt",
+          "sha256": "bdf4c22802eaf804f998195871c6b8938aac2ac14b2d78a8bd66a6f1eced833b",
+          "sourceUrl": "https://raw.githubusercontent.com/google/fonts/581699fcc0df7715a0f944e28b1a18d38e4aad62/ofl/fraunces/OFL.txt"
+        }
+      ]
+    },
+    {
+      "family": "Inter",
+      "file": "inter-latin-wght-normal.woff2",
+      "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62",
+      "license": "OFL-1.1",
+      "matchingDistribution": {
+        "package": "@fontsource-variable/inter",
+        "version": "5.3.0",
+        "member": "package/files/inter-latin-wght-normal.woff2",
+        "archiveUrl": "https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.3.0.tgz",
+        "archiveSha256": "d26710dd38e7217484a1d47ee76c024977ec550548876f26d06ed1844af09a14",
+        "npmIntegrityVerifiedDuringResearch": true
+      },
+      "originalAcquisitionVersion": "unknown",
+      "notices": [
+        {
+          "file": "licenses/Inter-Fontsource-LICENSE.txt",
+          "sha256": "3b0a5fca3d17942cde889069889dedbbbd075e9b599968c82a95f4d944e9b345",
+          "sourceUrl": "https://registry.npmjs.org/@fontsource-variable/inter/-/inter-5.3.0.tgz"
+        },
+        {
+          "file": "licenses/Inter-Google-Fonts-OFL.txt",
+          "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+          "sourceUrl": "https://raw.githubusercontent.com/google/fonts/b0928647ba26c8d55548aa19feb2f7aeba622d4a/ofl/inter/OFL.txt"
+        }
+      ]
+    }
+  ]
+}
