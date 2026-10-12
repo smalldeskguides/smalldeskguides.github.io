@@ -2,10 +2,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from watch_pages import PAGES_WORKFLOW, assess, public_files, watch
+from watch_pages import PAGES_WORKFLOW, SITE, REPO, assess, get_bytes, public_files, watch
 
 SHA = "a" * 40
 NOW = datetime(2026, 10, 12, 22, 0, tzinfo=timezone.utc)
@@ -19,6 +20,19 @@ def build(status="building", seconds=0):
 def run(status="in_progress", conclusion=None):
     return {"id": 123, "workflow_id": PAGES_WORKFLOW, "head_sha": SHA,
             "created_at": NOW.isoformat(), "run_attempt": 1, "status": status, "conclusion": conclusion}
+
+
+def public_success():
+    record = run("completed", "success")
+    record["run_started_at"] = NOW.isoformat()
+    record["deployment"] = {"id": 321, "sha": SHA, "environment": "github-pages",
+        "created_at": NOW.isoformat(), "status": {"id": 789, "state": "success",
+        "environment": "github-pages", "environment_url": SITE, "created_at": NOW.isoformat(),
+        "log_url": f"https://github.com/{REPO}/actions/runs/123/job/456"}}
+    record["deployJob"] = {"id": 456, "name": "deploy", "head_sha": SHA,
+        "status": "completed", "conclusion": "success", "steps": [
+        {"name": "Deploy to GitHub Pages", "status": "completed", "conclusion": "success"}]}
+    return record
 
 
 class PagesEvidence(unittest.TestCase):
@@ -136,6 +150,70 @@ class PagesEvidence(unittest.TestCase):
         self.assertEqual(len(files), 26)
         self.assertIn("assets/fonts/provenance.json", files)
         self.assertEqual(sum(name.startswith("assets/fonts/licenses/") for name in files), 4)
+
+    def test_public_native_deployment_requires_bound_job_and_receipt(self):
+        report = assess(SHA, SHA, None, [public_success()], NOW)
+        self.assertEqual(report["state"], "awaiting_served_bytes")
+        self.assertEqual(report["nativeEvidenceKind"], "public_pages_workflow_and_deployment")
+        self.assertEqual(report["deploymentId"], 321)
+        self.assertIsNone(report["buildStatus"])
+        bare = run("completed", "success")
+        self.assertEqual(assess(SHA, SHA, None, [bare], NOW, expired=True)["state"], "missing_deployment_receipt")
+
+    def test_public_native_receipt_mismatches_cannot_verify(self):
+        changes = [("sha", "b" * 40), ("environment", "other"),
+                   ("created_at", (NOW - timedelta(days=1)).isoformat())]
+        for key, value in changes:
+            record = public_success(); record["deployment"][key] = value
+            with self.subTest(key=key):
+                self.assertNotEqual(assess(SHA, SHA, None, [record], NOW, expired=True)["state"], "awaiting_served_bytes")
+        for key, value in [("log_url", f"https://github.com/{REPO}/actions/runs/999/job/456"),
+                           ("environment_url", "https://example.com/"), ("environment", "other"),
+                           ("created_at", (NOW + timedelta(days=1)).isoformat())]:
+            record = public_success(); record["deployment"]["status"][key] = value
+            with self.subTest(statusKey=key):
+                self.assertNotEqual(assess(SHA, SHA, None, [record], NOW, expired=True)["state"], "awaiting_served_bytes")
+        record = public_success(); record["deployJob"]["steps"][0]["conclusion"] = "failure"
+        self.assertNotEqual(assess(SHA, SHA, None, [record], NOW, expired=True)["state"], "awaiting_served_bytes")
+
+    def test_manual_retry_fence_excludes_prior_same_sha_success(self):
+        record = public_success()
+        later = NOW + timedelta(minutes=5)
+        self.assertEqual(assess(SHA, SHA, None, [record], later, expired=True, not_before=later)["state"], "missing_run")
+        record["run_started_at"] = later.isoformat(); record["run_attempt"] = 2
+        # Even a fresh attempt cannot reuse an earlier deployment receipt.
+        self.assertEqual(assess(SHA, SHA, None, [record], later, expired=True, not_before=later)["state"],
+                         "missing_deployment_receipt")
+
+    def test_deadline_exhausted_readback_cannot_skip_ownership_and_pass(self):
+        elapsed = [0]
+        calls = []
+        def native(*_): calls.append(elapsed[0]); return SHA, build("built"), [run("completed", "success")]
+        def readback(*_): elapsed[0] = 60; return [{"path": "index.html", "exactBytes": True}]
+        report = watch(SHA, {"index.html": "c" * 64}, timeout=60, native=native, readback=readback,
+                       clock=lambda: elapsed[0], utc=lambda: NOW, emit=lambda _: None)
+        self.assertEqual(calls, [0])
+        self.assertFalse(report["verified"])
+        self.assertEqual(report["state"], "observation_error")
+
+    def test_http_body_completing_after_deadline_is_rejected(self):
+        elapsed = [0]
+        class Response:
+            status = 200
+            url = SITE
+            def __enter__(self): return self
+            def __exit__(self, *_): return False
+            def read1(self, _): elapsed[0] = 20; return b"late"
+        class Opener:
+            def open(self, request, **_):
+                self.request = request
+                return Response()
+        opener = Opener()
+        with patch("watch_pages.time.monotonic", side_effect=lambda: elapsed[0]), \
+             patch("watch_pages.build_opener", return_value=opener), self.assertRaises(TimeoutError):
+            get_bytes(SITE, 10)
+        self.assertEqual(opener.request.get_method(), "GET")
+        self.assertNotIn("Authorization", opener.request.headers)
 
 
 if __name__ == "__main__": unittest.main()

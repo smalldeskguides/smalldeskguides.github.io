@@ -58,14 +58,21 @@ observations; the job also has a twelve-minute hard limit. Its token permissions
 remain `contents: read`. It neither deploys nor retries a build. A newer main push
 cancels the old watcher, and a changed remote revision supersedes its evidence.
 
-The watcher requires the exact native build, a successful managed Pages run for
-that attempt, and matching public HTML/assets/robots/sitemap bytes. It reports
+The watcher uses the public managed Pages workflow, its successful deploy job,
+and a native `github-pages` deployment/status receipt bound to that run, SHA,
+attempt time and site URL. The anonymous legacy Pages build endpoint returns
+404 for this site, so CI does not request it or infer a raw build status from
+workflow state. No new permission is needed for these observed public endpoints.
+It also requires matching public HTML/assets/robots/sitemap bytes. It reports
 `missing_run`, `stuck_build`, `deployment_failed`, `stale_revision`,
-`serving_stale`, or `observation_error` instead of treating an unchanged pending
+`serving_stale`, `missing_deployment_receipt`, or `observation_error` instead of treating an unchanged pending
 status or source-CI success as deployment success. Updating a capture time cannot
 refresh an old build occurrence. Earlier success for the same SHA cannot certify
 a new build attempt. Stale serving receives the remaining bounded window for
-propagation; no wait or retry loop continues indefinitely.
+propagation; no wait or retry loop continues indefinitely. HTTP reads use socket
+timeouts and absolute-deadline checks between bounded body chunks; late bytes or
+an unavailable final ownership recheck cannot produce success. The twelve-minute
+hosted job limit supplies the separate process-level bound on blocking I/O.
 
 For a read-only local observation from a clean checkout of the target commit:
 
@@ -85,7 +92,16 @@ gh api repos/smalldeskguides/smalldeskguides.github.io/git/ref/heads/main
 gh api --method POST repos/smalldeskguides/smalldeskguides.github.io/pages/builds
 ```
 
-The request builds the latest default-branch revision; it cannot bind a supplied
+Capture the UTC request-start time immediately before the approved POST, then
+pass it when watching that retry:
+
+```sh
+python3 -B scripts/watch_pages.py --expected-sha COMMIT_SHA --not-before REQUEST_START_UTC
+```
+
+This fence excludes a prior successful run/deployment of the same SHA, including
+the time before a new retry appears in public run history. The request builds
+the latest default-branch revision; it cannot bind a supplied
 SHA, so stop on any remote drift and verify the response/run revision. GitHub
 queues requests behind an in-progress build. Request at most one approved retry,
 then inspect its terminal status and run the watcher. A second request, settings
