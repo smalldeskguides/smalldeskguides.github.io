@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import shutil
 import sys
 import tempfile
@@ -64,6 +65,20 @@ class SiteRegressions(unittest.TestCase):
         path = self.site/'assets/fonts/licenses/Fraunces-Fontsource-LICENSE.txt'
         path.write_text('Not the distributed notice')
         self.assertRejected('font/notice checksum differs')
+
+    def test_manifest_cannot_omit_or_duplicate_license_notices(self):
+        path = self.site/'assets/fonts/provenance.json'
+        original = json.loads(path.read_text())
+        for notices in ([],[original['fonts'][0]['notices'][0]]*2):
+            changed = json.loads(json.dumps(original))
+            changed['fonts'][0]['notices'] = notices
+            path.write_text(json.dumps(changed))
+            self.assertRejected('expected complete package and Google Fonts notices')
+        for notice in original['fonts'][0]['notices']:
+            (self.site/'assets/fonts'/notice['file']).unlink()
+        changed['fonts'][0]['notices'] = []
+        path.write_text(json.dumps(changed))
+        self.assertRejected('expected complete package and Google Fonts notices')
 
     def test_encoded_escape_and_malformed_url(self):
         self.change('index.html','href="#main"','href="/%2e%2e/outside.html"')

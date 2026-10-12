@@ -166,7 +166,14 @@ def audit(root):
         for entry in entries:
             declared.add(entry['file'])
             if entry['license'] != 'OFL-1.1': raise ValueError('unexpected recorded font license')
-            for item in [entry,*entry['notices']]:
+            family = entry['family']
+            if family not in ('Fraunces','Inter') or entry['file'] != family.lower()+'-latin-wght-normal.woff2':
+                raise ValueError('font family/file binding differs')
+            notices = entry['notices']
+            required = {f'licenses/{family}-Fontsource-LICENSE.txt',f'licenses/{family}-Google-Fonts-OFL.txt'}
+            if not isinstance(notices,list) or len(notices) != 2 or {n['file'] for n in notices} != required:
+                raise ValueError(f'expected complete package and Google Fonts notices for {family}')
+            for item in [entry,*notices]:
                 path = (root/'assets/fonts'/item['file']).resolve()
                 if root/'assets/fonts' not in path.parents: raise ValueError('font/notice path escapes font directory')
                 if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != item['sha256']:
