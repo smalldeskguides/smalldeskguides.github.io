@@ -50,6 +50,56 @@ GET for changed served files and compare their bytes with the checked source.
 Those are source, CI and served-byte receipts; they do not establish live-browser
 layout, accessibility, external-link availability or customer acceptance.
 
+## Bound Pages waits and recover once
+
+On a main push, `pages-watch` follows the source check and makes anonymous GETs
+using the existing public APIs. It waits at most ten minutes, with spaced
+observations; the job also has a twelve-minute hard limit. Its token permissions
+remain `contents: read`. It neither deploys nor retries a build. A newer main push
+cancels the old watcher, and a changed remote revision supersedes its evidence.
+
+The watcher requires the exact native build, a successful managed Pages run for
+that attempt, and matching public HTML/assets/robots/sitemap bytes. It reports
+`missing_run`, `stuck_build`, `deployment_failed`, `stale_revision`,
+`serving_stale`, or `observation_error` instead of treating an unchanged pending
+status or source-CI success as deployment success. Updating a capture time cannot
+refresh an old build occurrence. Earlier success for the same SHA cannot certify
+a new build attempt. Stale serving receives the remaining bounded window for
+propagation; no wait or retry loop continues indefinitely.
+
+For a read-only local observation from a clean checkout of the target commit:
+
+```sh
+python3 -B scripts/watch_pages.py --expected-sha COMMIT_SHA --once
+```
+
+Without `--once`, the same ten-minute maximum applies. Nonzero exit means that
+the required deployment evidence was not verified; inspect the named condition
+and the existing managed workflow before choosing recovery. Preserve the last
+successful site. If a single retry is explicitly authorized, first verify that
+main still equals the approved SHA and source checks passed, then use the
+[supported build request](https://docs.github.com/en/rest/pages/pages#request-a-github-pages-build):
+
+```sh
+gh api repos/smalldeskguides/smalldeskguides.github.io/git/ref/heads/main
+gh api --method POST repos/smalldeskguides/smalldeskguides.github.io/pages/builds
+```
+
+The request builds the latest default-branch revision; it cannot bind a supplied
+SHA, so stop on any remote drift and verify the response/run revision. GitHub
+queues requests behind an in-progress build. Request at most one approved retry,
+then inspect its terminal status and run the watcher. A second request, settings
+change or rollback needs its own scope; never loop POSTs. Enabling automated
+POST recovery would require broader Pages write authority and separate approval;
+this change adds no such permission or credential.
+
+The October 12 incident produced a `building` record without an exposed Pages
+run or deployment record. One approved build request created a managed run and
+published the same bytes successfully. This identifies the missing execution
+evidence and the successful recovery route; GitHub did not expose the underlying
+dispatch cause. The watcher detects recurrence and fails visibly in existing CI;
+it cannot guarantee that GitHub's service never stalls.
+
 ## Roll back with a forward change
 
 Keep the suspect commit and last verified production commit in the release
